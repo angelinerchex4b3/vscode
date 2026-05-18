@@ -55,6 +55,15 @@ export const BackgroundSummarizationThresholds = {
 	 * without relying on foreground compaction.
 	 */
 	emergency: 0.90,
+	/**
+	 * Minimum context ratio for applying a previously-completed background
+	 * summary on the next render. Below this we discard the stale summary —
+	 * typically because the user switched to a model with a larger context
+	 * window (or lowered the configured context size), and applying it would
+	 * surface a surprising "Compacted conversation" notice with plenty of
+	 * headroom remaining.
+	 */
+	applyMinRatio: 0.65,
 } as const;
 
 /**
@@ -104,13 +113,22 @@ export class BackgroundSummarizer {
 
 	readonly modelMaxPromptTokens: number;
 
+	/**
+	 * Identifier of the endpoint this summarizer was created for. Used by
+	 * {@link AgentIntent.getOrCreateBackgroundSummarizer} to detect a
+	 * mid-session model switch — a summary computed against one model's
+	 * prefix is cancelled rather than applied to a different model.
+	 */
+	readonly endpointModel: string | undefined;
+
 	get state(): BackgroundSummarizationState { return this._state; }
 	get error(): unknown { return this._error; }
 
 	get token() { return this._cts?.token; }
 
-	constructor(modelMaxPromptTokens: number) {
+	constructor(modelMaxPromptTokens: number, endpointModel?: string) {
 		this.modelMaxPromptTokens = modelMaxPromptTokens;
+		this.endpointModel = endpointModel;
 	}
 
 	start(work: (token: CancellationToken) => Promise<IBackgroundSummarizationResult>, parentToken?: CancellationToken): void {
